@@ -1,13 +1,13 @@
 # FileFlipper — Quick Edit for Mac
 
-> **Fork build 1.6.0:** native macOS workspace, a clearer Finder quick-action grid,
+> **Fork build 1.6.1:** native macOS workspace, a clearer Finder quick-action grid,
 > automatic light/dark appearance and Traditional Chinese. Includes the 1.5.1 Office
 > input hardening and sandboxed local build. See [fork changes and build instructions](FORK-NOTES.md).
 > The upstream download links below still refer to upstream binaries, not this fork's changes.
 
 ## 此 fork 的新版介面
 
-開啟 App → 拖入或選擇檔案 → 選格式或工具 → 轉換。完成後可直接在 Finder 顯示結果。
+開啟 App → 拖入或選擇檔案 → 選格式或工具 → 轉換。完成後新檔會接在清單中的原檔下方，也可直接在 Finder 顯示結果。
 保留 Finder 的 **Shift** 格式選單與 **Option + Shift** 快速工具，支援繁體中文與自動明暗模式。
 
 ![FileFlipper 1.6 workspace](docs/native-workbench-light.png)

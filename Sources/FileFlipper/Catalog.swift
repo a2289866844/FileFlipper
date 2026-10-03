@@ -1,6 +1,13 @@
 import AppKit
 import UniformTypeIdentifiers
 
+/// Explicit provenance keeps results beside the correct input even after partial failures.
+struct ConversionOutput: Identifiable, Equatable {
+    let url: URL
+    let sources: [URL]
+    var id: URL { url }
+}
+
 /// One action shared by the main window and quick picker.
 struct PickerItem {
     let title: String
@@ -11,7 +18,7 @@ struct PickerItem {
     /// Some AppKit APIs (HTML import, printing) must run on the main thread.
     var runsOnMain = false
     /// Takes the dropped files and returns the files it created.
-    let action: ([URL]) throws -> [URL]
+    let action: ([URL]) throws -> [ConversionOutput]
 }
 
 enum FileKind: Equatable {
@@ -65,7 +72,7 @@ enum Catalog {
             var items = ImageConverter.targets
                 .filter { !$0.matches(ext: sourceExt) && ImageConverter.canWrite($0.type) }
                 .map { target in
-                    PickerItem(title: target.title, action: perFile(kind) { url in
+                    PickerItem(title: target.title, detail: formatDetail(for: target.title), action: perFile(kind) { url in
                         try [ImageConverter.convert(url, to: target.type, ext: target.ext)]
                     })
                 }
@@ -78,7 +85,7 @@ enum Catalog {
             var items = ["PNG", "JPG", "TIFF", "HEIC"].compactMap { name -> PickerItem? in
                 guard let target = ImageConverter.targets.first(where: { $0.title == name }),
                       ImageConverter.canWrite(target.type) else { return nil }
-                return PickerItem(title: name, action: perFile(kind) { url in
+                return PickerItem(title: name, detail: formatDetail(for: name), action: perFile(kind) { url in
                     try PDFConverter.toImages(url, type: target.type, ext: target.ext)
                 })
             }
@@ -230,6 +237,15 @@ enum Catalog {
 
     // MARK: Helpers
 
+    static func formatDetail(for title: String) -> String? {
+        switch title {
+        case "HEIC": return L("HEIC: efficient photos, commonly used on iPhone. Smaller files; some apps may not support it.")
+        case "TIFF": return L("TIFF: detailed images for scanning, editing and print. Files are usually larger.")
+        case "BMP": return L("BMP: a traditional bitmap format. Usually large files, mainly for older software.")
+        default: return nil
+        }
+    }
+
     /// Icon for a format bubble, by its label.
     static func formatSymbol(for title: String) -> String {
         switch title {
@@ -246,13 +262,13 @@ enum Catalog {
     }
 
     /// Runs `body` for every dropped file of the given kind.
-    private static func perFile(_ kind: FileKind, _ body: @escaping (URL) throws -> [URL]) -> ([URL]) throws -> [URL] {
+    private static func perFile(_ kind: FileKind, _ body: @escaping (URL) throws -> [URL]) -> ([URL]) throws -> [ConversionOutput] {
         return { urls in
-            var outputs: [URL] = []
+            var outputs: [ConversionOutput] = []
             var firstError: Error?
             for url in urls where FileKind(url: url) == kind {
                 do {
-                    outputs += try body(url)
+                    outputs += try body(url).map { ConversionOutput(url: $0, sources: [url]) }
                 } catch {
                     firstError = firstError ?? error
                 }
@@ -262,11 +278,12 @@ enum Catalog {
         }
     }
 
-    private static func merge(_ kind: FileKind) -> ([URL]) throws -> [URL] {
+    private static func merge(_ kind: FileKind) -> ([URL]) throws -> [ConversionOutput] {
         return { urls in
             let matching = urls.filter { FileKind(url: $0) == kind }
             guard let first = matching.first else { return [] }
-            return try [PDFConverter.makePDF(from: matching, near: first, name: "Merged")]
+            let output = try PDFConverter.makePDF(from: matching, near: first, name: "Merged")
+            return [ConversionOutput(url: output, sources: matching)]
         }
     }
 }

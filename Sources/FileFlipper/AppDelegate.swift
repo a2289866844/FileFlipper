@@ -76,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Sandbox: we need permission to write into the folders holding these files.
         guard let endAccess = FolderAccess.shared.beginAccess(to: urls.map { $0.deletingLastPathComponent() }) else {
             log.error("No folder access for \(urls.first?.deletingLastPathComponent().path ?? "?", privacy: .public)")
-            workbench.complete(outputs: [], message: L("Folder access was not granted. Choose a folder when you try again."), failed: true)
+            workbench.complete(results: [], message: L("Folder access was not granted. Choose a folder when you try again."), failed: true)
             showWorkbench()
             return
         }
@@ -87,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             toast.show(L("%@: %@…", item.title, what), symbol: "hourglass", duration: nil)
         }
 
-        let work = { () -> Result<[URL], Error> in
+        let work = { () -> Result<[ConversionOutput], Error> in
             Result { try item.action(urls) }
         }
         if item.runsOnMain {
@@ -107,26 +107,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func finish(_ result: Result<[URL], Error>, item: PickerItem) {
+    private func finish(_ result: Result<[ConversionOutput], Error>, item: PickerItem) {
         let message: String
-        let outputs: [URL]
+        let results: [ConversionOutput]
         let failed: Bool
         switch result {
         case .success(let files):
-            outputs = files
+            results = files
             failed = false
-            message = files.count == 1 ? L("Saved %@", files[0].lastPathComponent)
+            message = files.count == 1 ? L("Saved %@", files[0].url.lastPathComponent)
                 : (files.isEmpty ? L("%@: nothing to do", item.title) : L("Saved %@ files", String(files.count)))
         case .failure(ConversionError.cancelled):
-            outputs = []; failed = false; message = L("Cancelled")
+            results = []; failed = false; message = L("Cancelled")
         case .failure(let error):
-            outputs = []; failed = true; message = error.localizedDescription
+            results = []; failed = true; message = error.localizedDescription
             log.error("\(item.title, privacy: .public) failed: \(message, privacy: .public)")
         }
-        workbench.complete(outputs: outputs, message: message, failed: failed)
+        workbench.complete(results: results, message: message, failed: failed)
         // A completed toast also dismisses any persistent progress toast from a Finder action.
         if hasProgressToast || !(mainWindow.window?.isVisible ?? false) {
-            toast.show(message, symbol: failed ? "exclamationmark.circle.fill" : (outputs.isEmpty ? "info.circle" : "checkmark.circle.fill"),
+            toast.show(message, symbol: failed ? "exclamationmark.circle.fill" : (results.isEmpty ? "info.circle" : "checkmark.circle.fill"),
                        duration: failed ? 5 : 2.5)
         }
         hasProgressToast = false

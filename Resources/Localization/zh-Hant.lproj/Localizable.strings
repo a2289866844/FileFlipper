@@ -142,3 +142,9 @@
 "Working on %@…" = "正在執行%@…";
 "Working…" = "處理中…";
 "Your files" = "你的檔案";
+"HEIC: efficient photos, commonly used on iPhone. Smaller files; some apps may not support it." = "HEIC：iPhone 常用的高效率照片格式，檔案較小；部分軟體可能不支援。";
+"TIFF: detailed images for scanning, editing and print. Files are usually larger." = "TIFF：常用於掃描、修圖和印刷，保留豐富細節，檔案通常較大。";
+"BMP: a traditional bitmap format. Usually large files, mainly for older software." = "BMP：較舊的點陣圖格式，檔案通常很大，主要用於相容舊軟體。";
+"Converted" = "已轉換";
+"Merged from %@ files" = "由 %@ 個檔案合併";
+"Show %@ in Finder" = "在 Finder 顯示 %@";

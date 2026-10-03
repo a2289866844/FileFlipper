@@ -27,6 +27,26 @@ final class ConversionTests: XCTestCase {
         }
     }
 
+    func testBatchConversionKeepsExactSourceMappingAfterFailureAndNameCollision() throws {
+        let broken = directory.appendingPathComponent("broken.xlsx")
+        let source = directory.appendingPathComponent("sample.xlsx")
+        let existing = directory.appendingPathComponent("sample.md")
+        try Data("invalid Office file".utf8).write(to: broken)
+        let original = try fixture("sample.xlsx")
+        try original.write(to: source)
+        let sentinel = Data("keep this file".utf8)
+        try sentinel.write(to: existing)
+        let item = try XCTUnwrap(Catalog.items(for: [broken, source], tools: false).first { $0.title == "MD" })
+        let results = try item.action([broken, source])
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].sources, [source])
+        XCTAssertEqual(results[0].url.deletingLastPathComponent(), source.deletingLastPathComponent())
+        XCTAssertEqual(results[0].url.lastPathComponent, "sample 2.md")
+        XCTAssertEqual(try Data(contentsOf: source), original)
+        XCTAssertEqual(try Data(contentsOf: existing), sentinel)
+        XCTAssertTrue(try String(contentsOf: results[0].url).contains("42"))
+    }
+
     func testSpreadsheetRejectsHugeSparseGridAndInvalidCoordinates() throws {
         let input = directory.appendingPathComponent("grid.xlsx")
         try spreadsheet(cells: "<c r='A1'><v>1</v></c><c r='XFD1048576'><v>2</v></c>").write(to: input)

@@ -44,12 +44,43 @@ final class WorkbenchTests: XCTestCase {
         XCTAssertEqual(model.files, [input])
         XCTAssertTrue(model.isWorking)
         let output = URL(fileURLWithPath: "/tmp/photo.jpg")
-        model.complete(outputs: [output], message: "Saved photo.jpg")
+        model.complete(results: [ConversionOutput(url: output, sources: [input])], message: "Saved photo.jpg")
         XCTAssertFalse(model.isWorking)
         XCTAssertEqual(model.outputs, [output])
         model.tools = true
         XCTAssertNil(model.selectedTitle)
         XCTAssertFalse(model.canRun)
+    }
+
+    func testResultsStayWithTheirSourcesAcrossRepeatedConversionsAndSelectionChanges() {
+        let model = WorkbenchModel()
+        let a = URL(fileURLWithPath: "/tmp/a/photo.png")
+        let b = URL(fileURLWithPath: "/tmp/b/photo.png")
+        model.setFiles([a, b])
+        let first = ConversionOutput(url: b.deletingPathExtension().appendingPathExtension("jpg"), sources: [b])
+        model.complete(results: [first], message: "Saved")
+        XCTAssertTrue(model.results(after: a).isEmpty)
+        XCTAssertEqual(model.results(after: b), [first])
+        let second = ConversionOutput(url: b.deletingPathExtension().appendingPathExtension("tiff"), sources: [b])
+        model.complete(results: [second], message: "Saved")
+        XCTAssertEqual(model.results(after: b), [first, second])
+        XCTAssertEqual(model.outputs, [second.url])
+        model.remove(a)
+        XCTAssertEqual(model.results(after: b), [first, second])
+        model.setFiles([])
+        XCTAssertTrue(model.results.isEmpty)
+    }
+
+    func testMergedResultAppearsOnceAndKeepsAllSourceReferences() {
+        let model = WorkbenchModel()
+        let a = URL(fileURLWithPath: "/tmp/a.png"), b = URL(fileURLWithPath: "/tmp/b.png")
+        model.setFiles([a, b])
+        let result = ConversionOutput(url: URL(fileURLWithPath: "/tmp/Merged.pdf"), sources: [a, b])
+        model.complete(results: [result], message: "Saved")
+        XCTAssertEqual(model.results(after: a), [result])
+        XCTAssertTrue(model.results(after: b).isEmpty)
+        model.remove(a)
+        XCTAssertEqual(model.results(after: b), [result])
     }
 
     func testUnsupportedFilesHaveNoActions() {
@@ -95,9 +126,9 @@ final class WorkbenchTests: XCTestCase {
                 }
                 if state == "tools" { model.tools = true; model.selectedTitle = L("Clean") }
                 if state == "working", let item = model.selectedItem { model.begin(item, files: model.files) }
-                if state == "error" { model.complete(outputs: [], message: L("Folder access was not granted. Choose a folder when you try again."), failed: true) }
+                if state == "error" { model.complete(results: [], message: L("Folder access was not granted. Choose a folder when you try again."), failed: true) }
                 if state == "success" {
-                    model.complete(outputs: [URL(fileURLWithPath: "/tmp/溫哥華週末.jpg")], message: L("Saved %@", "溫哥華週末.jpg"))
+                    model.complete(results: model.files.map { ConversionOutput(url: $0.deletingPathExtension().appendingPathExtension("jpg"), sources: [$0]) }, message: L("Saved %@ files", String(model.files.count)))
                 }
                 let content = WorkbenchView(model: model).frame(width: 790, height: 640)
                     .environment(\.colorScheme, dark ? .dark : .light)

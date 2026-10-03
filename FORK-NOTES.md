@@ -1,8 +1,20 @@
-# Local fork 1.6.0
+# Local fork 1.6.1
 
 Based on upstream `v1.5.0` (`3ecf3fe0aa5e5c0d383db899bf77986952d4fe19`).
 This is an independent local build, not an upstream release or an Apple-notarized app.
 It uses the bundle identifier `com.a2289866844.fileflipper` so existing upstream folder grants are not reused.
+
+## Results in 1.6.1
+
+- Converted copies appear immediately below their own source in the workspace,
+  with a converted label and individual **Show in Finder** button.
+- Explicit source references preserve the association through partial failures,
+  repeated conversions, same-name inputs in different directories and merged outputs.
+- Files continue to save beside their originals. Existing names receive a numeric
+  suffix; the app does not control Finder's visual sort order.
+- HEIC, TIFF and BMP choices include short explanations.
+
+![Converted copies beside their sources](docs/converted-results-light.png)
 
 ## Interface in 1.6.0
 
@@ -64,7 +76,7 @@ The script verifies code-signature integrity and sandbox/debugger entitlements.
 Local signing is ad-hoc; it does not establish an Apple Developer ID or notarization.
 Do not change Gatekeeper settings or strip quarantine attributes to distribute this build.
 
-The 31 tests cover malformed and truncated ZIPs, decompression limits, corrupt
+The 34 tests cover malformed and truncated ZIPs, decompression limits, corrupt
 checksums, XML limits, unusual Office indices, DOCX/XLSX/PPTX-to-Markdown examples,
 and PNG-to-JPEG conversion. They verify that input files and existing outputs remain
 unchanged. Workspace tests cover selection, mixed batches, duplicate-run protection,

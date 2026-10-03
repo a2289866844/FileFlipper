@@ -10,7 +10,14 @@ final class WorkbenchModel: ObservableObject {
     @Published private(set) var isWorking = false
     @Published private(set) var message: String?
     @Published private(set) var failed = false
+    @Published private(set) var results: [ConversionOutput] = []
     @Published private(set) var outputs: [URL] = []
+    func results(after source: URL) -> [ConversionOutput] {
+        results.filter { result in
+            // Merged results appear once, below the first remaining source in the list.
+            files.first(where: { result.sources.contains($0) }) == source
+        }
+    }
     var onRun: ((PickerItem, [URL]) -> Void)?
 
     var items: [PickerItem] { Catalog.items(for: files, tools: tools) }
@@ -31,6 +38,7 @@ final class WorkbenchModel: ObservableObject {
         }
         selectedTitle = nil
         message = nil
+        results.removeAll { result in !result.sources.contains(where: files.contains) }
         outputs = []
         failed = false
     }
@@ -63,9 +71,12 @@ final class WorkbenchModel: ObservableObject {
         message = L("Working on %@…", item.title)
     }
 
-    func complete(outputs: [URL], message: String, failed: Bool = false) {
+    func complete(results: [ConversionOutput], message: String, failed: Bool = false) {
         isWorking = false
-        self.outputs = outputs
+        outputs = results.map(\.url)
+        let updated = Set(outputs)
+        self.results.removeAll { updated.contains($0.url) }
+        self.results.append(contentsOf: results)
         self.message = message
         self.failed = failed
     }
@@ -191,6 +202,9 @@ struct WorkbenchView: View {
                                         .buttonStyle(.plain).foregroundStyle(.secondary)
                                         .accessibilityLabel(L("Remove %@ from selection", url.lastPathComponent))
                                 }.padding(.vertical, 12).padding(.horizontal, 14)
+                                ForEach(model.results(after: url)) { result in
+                                    resultRow(result)
+                                }
                                 Divider().padding(.horizontal, 14)
                             }
                         }
@@ -207,6 +221,31 @@ struct WorkbenchView: View {
             .onDrop(of: [UTType.fileURL.identifier], isTargeted: $dropTargeted, perform: acceptDrop)
         }
         .disabled(model.isWorking)
+    }
+
+    private func resultRow(_ result: ConversionOutput) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.turn.down.right").font(.system(size: 12)).foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Image(nsImage: NSWorkspace.shared.icon(forFile: result.url.path))
+                .resizable().frame(width: 24, height: 24).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(result.url.lastPathComponent).font(.system(size: 12, weight: .medium))
+                    .lineLimit(1).truncationMode(.middle).help(result.url.path)
+                Text(result.sources.count > 1 ? L("Merged from %@ files", String(result.sources.count)) : L("Converted"))
+                    .font(.system(size: 10)).foregroundStyle(accent)
+            }
+            Spacer(minLength: 0)
+            Button { NSWorkspace.shared.activateFileViewerSelecting([result.url]) } label: {
+                Image(systemName: "folder").font(.system(size: 12))
+            }
+            .buttonStyle(.plain).foregroundStyle(accent)
+            .help(L("Show in Finder"))
+            .accessibilityLabel(L("Show %@ in Finder", result.url.lastPathComponent))
+        }
+        .padding(.vertical, 10).padding(.leading, 16).padding(.trailing, 12)
+        .background(accent.opacity(0.06))
+        .accessibilityElement(children: .contain)
     }
 
     private var optionsPane: some View {
