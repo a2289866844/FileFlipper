@@ -44,6 +44,7 @@ enum SpreadsheetConverter {
         let date1904 = workbook.child("workbookPr")?.attr("date1904") == "1"
 
         var sheets: [Sheet] = []
+        var remainingCells = 500_000
         for sheet in workbook.child("sheets")?.children("sheet") ?? [] {
             if sheet.attr("state") == "hidden" || sheet.attr("state") == "veryHidden" { continue }
             guard let id = sheet.relationshipID, let path = relationships[id]?.target,
@@ -61,6 +62,12 @@ enum SpreadsheetConverter {
             guard let lastRow = grid.keys.max(), let firstRow = grid.keys.min() else { continue }
             let columns = grid.values.flatMap(\.keys)
             let firstColumn = columns.min() ?? 0, lastColumn = columns.max() ?? 0
+            let width = lastColumn - firstColumn + 1
+            let height = lastRow - firstRow + 1
+            guard width <= remainingCells, height <= remainingCells / width else {
+                throw ConversionError.message(L("This spreadsheet exceeds the safe table size limit"))
+            }
+            remainingCells -= width * height
             var rows: [[String]] = []
             var numericCounts = [Int: Int](), totalCounts = [Int: Int]()
             for r in firstRow...lastRow {
@@ -123,7 +130,7 @@ enum SpreadsheetConverter {
                 return .date(time: bare.contains("h"))
             }
             if bare.contains("h") || bare.contains("s") { return .time }
-            let decimals = bare.range(of: #"\.(0+)"#, options: .regularExpression).map { bare[$0].count - 1 } ?? 0
+            let decimals = min(15, bare.range(of: #"\.(0+)"#, options: .regularExpression).map { bare[$0].count - 1 } ?? 0)
             if bare.contains("%") { return .percent(decimals: decimals) }
             if bare.contains("0") || bare.contains("#") { return .fixed(decimals: decimals, grouping: bare.contains(",")) }
             return .general
@@ -145,7 +152,7 @@ enum SpreadsheetConverter {
         case "str", "e":
             return (raw, false)
         default:
-            guard let number = Double(raw) else { return (raw, false) }
+            guard let number = Double(raw), number.isFinite else { return (raw, false) }
             let style = cell.attr("s").flatMap(Int.init).flatMap { formats.indices.contains($0) ? formats[$0] : nil } ?? .general
             return (format(number, style, date1904: date1904), true)
         }
@@ -187,16 +194,22 @@ enum SpreadsheetConverter {
 
     /// "C12" → (column 2, row 11), zero-based.
     private static func position(_ reference: String) -> (Int, Int)? {
+        // Excel's actual bounds also prevent integer overflow and huge sparse grids.
+        guard reference.utf8.count <= 10 else { return nil }
         var column = 0
-        var digits = ""
-        for character in reference.uppercased() {
-            if let ascii = character.asciiValue, character.isLetter {
-                column = column * 26 + Int(ascii - 64)
-            } else if character.isNumber {
-                digits.append(character)
-            }
+        var row = 0
+        var inRow = false
+        for byte in reference.uppercased().utf8 {
+            if (65...90).contains(byte), !inRow {
+                column = column * 26 + Int(byte - 64)
+                guard column <= 16_384 else { return nil }
+            } else if (48...57).contains(byte), column > 0 {
+                inRow = true
+                row = row * 10 + Int(byte - 48)
+                guard row <= 1_048_576 else { return nil }
+            } else { return nil }
         }
-        guard column > 0, let row = Int(digits), row > 0 else { return nil }
+        guard column > 0, row > 0 else { return nil }
         return (column - 1, row - 1)
     }
 

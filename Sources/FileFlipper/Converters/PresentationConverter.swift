@@ -397,7 +397,7 @@ enum PresentationConverter {
             for p in body.children("p") {
                 var paragraph = Paragraph()
                 let pPr = p.child("pPr")
-                paragraph.level = pPr?.attr("lvl").flatMap(Int.init) ?? 0
+                paragraph.level = min(8, max(0, pPr?.attr("lvl").flatMap(Int.init) ?? 0))
                 let levelStyles = levelProps(paragraph.level)
                 paragraph.alignment = alignment(pPr?.attr("algn") ?? levelStyles.lazy.compactMap { $0.attr("algn") }.first)
                     ?? (isTitle ? defaults.titleAlignment : .left)

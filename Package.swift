@@ -8,6 +8,8 @@ let package = Package(
         .executableTarget(
             name: "FileFlipper",
             path: "Sources/FileFlipper"
-        )
+        ),
+        .testTarget(name: "FileFlipperTests", dependencies: ["FileFlipper"],
+                    resources: [.copy("Fixtures")])
     ]
 )

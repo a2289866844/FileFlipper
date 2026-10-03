@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
-# Builds FileFlipper.app into ./build for running on this Mac (ad-hoc signed, sandboxed like the App Store build).
-#
-#   ./scripts/build-app.sh             # build
-#   ./scripts/build-app.sh --install   # also copy to /Applications
-#
-# Needs Xcode. Without Xcode it falls back to the Swift command-line tools
-# (that build is not sandboxed, which is fine for personal use).
+# Build a sandboxed local app with Xcode. No unsandboxed fallback is provided.
+# FILEFLIPPER_BUILD_DIR may point outside an iCloud-synced working directory.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-
 INSTALL=0
 for arg in "$@"; do
   case "$arg" in
@@ -16,46 +10,37 @@ for arg in "$@"; do
     *) echo "Unknown option: $arg" >&2; exit 1 ;;
   esac
 done
-
-APP="build/FileFlipper.app"
-rm -rf "$APP"
-mkdir -p build
-
-if xcodebuild -version >/dev/null 2>&1; then
-  xcodebuild -project FileFlipper.xcodeproj -scheme FileFlipper -configuration Release \
-    -derivedDataPath build/DerivedData \
-    CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
-    build > build/xcodebuild.log 2>&1 || {
-      grep -E "error:" build/xcodebuild.log || tail -20 build/xcodebuild.log
-      echo "Build failed. Full log: build/xcodebuild.log"
-      exit 1
-    }
-  BUILT="build/DerivedData/Build/Products/Release/FileFlipper.app"
-  cp -R "$BUILT" "$APP"
-else
-  echo "Xcode not found - building with the Swift command-line tools instead."
-  swift build -c release
-  BIN_DIR="$(swift build -c release --show-bin-path)"
-  mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-  cp "$BIN_DIR/FileFlipper" "$APP/Contents/MacOS/FileFlipper"
-  sed -e 's/$(EXECUTABLE_NAME)/FileFlipper/; s/$(PRODUCT_NAME)/FileFlipper/' \
-      -e 's/$(PRODUCT_BUNDLE_IDENTIFIER)/com.aimeesun.fileflipper/' \
-      -e 's/$(MARKETING_VERSION)/1.5.0/; s/$(CURRENT_PROJECT_VERSION)/9/' \
-      -e 's/$(MACOSX_DEPLOYMENT_TARGET)/14.0/' \
-      Resources/Info.plist > "$APP/Contents/Info.plist"
-  # Icon for the command-line build
-  ICONSET="build/AppIcon.iconset"
-  rm -rf "$ICONSET" && mkdir -p "$ICONSET"
-  cp Resources/Assets.xcassets/AppIcon.appiconset/*.png "$ICONSET/"
-  iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
-  /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP/Contents/Info.plist"
-  codesign --force --sign - "$APP"
+xcodebuild -version >/dev/null 2>&1 || {
+  echo 'Xcode is required to build the sandboxed application.' >&2
+  exit 1
+}
+BUILD_ROOT="${FILEFLIPPER_BUILD_DIR:-build}"
+mkdir -p "$BUILD_ROOT"
+BUILD_ROOT="$(cd "$BUILD_ROOT" && pwd)"
+xcodebuild -project FileFlipper.xcodeproj -scheme FileFlipper -configuration Release \
+  -derivedDataPath "$BUILD_ROOT/DerivedData" \
+  CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+  CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+  build > "$BUILD_ROOT/xcodebuild.log" 2>&1 || {
+    tail -40 "$BUILD_ROOT/xcodebuild.log"
+    exit 1
+  }
+APP="$BUILD_ROOT/DerivedData/Build/Products/Release/FileFlipper.app"
+codesign --verify --deep --strict --verbose=2 "$APP"
+codesign -d --entitlements - --xml "$APP" > "$BUILD_ROOT/entitlements.plist" 2>/dev/null
+SANDBOX=$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$BUILD_ROOT/entitlements.plist")
+DEBUG_ACCESS=$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.get-task-allow' "$BUILD_ROOT/entitlements.plist" 2>/dev/null || true)
+if [ "$SANDBOX" != true ] || [ "$DEBUG_ACCESS" = true ]; then
+  echo 'Refusing to install: sandbox or debugger entitlement check failed.' >&2
+  exit 1
 fi
-
-echo "Built $APP"
-
+printf 'Built and verified %s\n' "$APP"
 if [ "$INSTALL" = 1 ]; then
-  rm -rf "/Applications/FileFlipper.app"
-  cp -R "$APP" /Applications/
-  echo "Installed to /Applications/FileFlipper.app"
+  if [ -e /Applications/FileFlipper.app ] || [ -L /Applications/FileFlipper.app ]; then
+    echo 'An existing FileFlipper.app must be backed up before installation.' >&2
+    exit 1
+  fi
+  ditto "$APP" /Applications/FileFlipper.app
+  codesign --verify --deep --strict /Applications/FileFlipper.app
+  echo 'Installed to /Applications/FileFlipper.app'
 fi

@@ -1,5 +1,9 @@
 # FileFlipper — Quick Edit for Mac
 
+> **Fork build 1.5.1:** this fork adds bounded Office parsing, regression tests and
+> a sandboxed local build without debugger access. See [fork changes and build instructions](FORK-NOTES.md).
+> The upstream download links below still refer to upstream binaries, not this fork's changes.
+
 **在 Finder 里直接转换文件格式，不用打开任何软件。一键转 Markdown，喂给 AI 更省 token。**
 **A free, open-source file converter that works inside Finder. One-click Markdown for AI — fewer tokens.**
 

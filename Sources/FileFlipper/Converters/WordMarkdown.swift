@@ -138,7 +138,7 @@ enum WordMarkdown {
             var heading: Int?
             if style.name == "title" { heading = 1 }
             else if style.name.hasPrefix("heading "), let n = Int(style.name.dropFirst(8)) { heading = n }
-            else if let outline = pPr?.child("outlineLvl")?.attr("val").flatMap(Int.init) ?? style.outlineLevel, outline < 9 {
+            else if let outline = pPr?.child("outlineLvl")?.attr("val").flatMap(Int.init) ?? style.outlineLevel, (0..<9).contains(outline) {
                 heading = outline + 1
             }
             if let heading {
@@ -149,8 +149,9 @@ enum WordMarkdown {
             // Lists: numbering on the paragraph, or from its style.
             let numID = pPr?.child("numPr")?.child("numId")?.attr("val") ?? style.numID
             if let numID, numID != "0" {
-                let styleLevel = style.name.split(separator: " ").last.flatMap { Int($0) }.map { max(0, $0 - 1) }
-                let level = pPr?.child("numPr")?.child("ilvl")?.attr("val").flatMap(Int.init) ?? style.level ?? styleLevel ?? 0
+                let styleLevel = style.name.split(separator: " ").last.flatMap { Int($0) }.map { min(9, max(1, $0)) - 1 }
+                let requestedLevel = pPr?.child("numPr")?.child("ilvl")?.attr("val").flatMap(Int.init) ?? style.level ?? styleLevel ?? 0
+                let level = min(8, max(0, requestedLevel))
                 let ordered = numbering[numID]?[level] ?? style.name.contains("number")
                 let indent = String(repeating: "   ", count: level)
                 if ordered {
@@ -163,7 +164,7 @@ enum WordMarkdown {
                 return indent + "- " + text
             }
             // "List Bullet 2" and friends: the trailing number is the nesting level.
-            let styleLevel = style.name.split(separator: " ").last.flatMap { Int($0) }.map { max(0, $0 - 1) } ?? 0
+            let styleLevel = style.name.split(separator: " ").last.flatMap { Int($0) }.map { min(9, max(1, $0)) - 1 } ?? 0
             let styleIndent = String(repeating: "   ", count: styleLevel)
             if style.name.contains("list bullet") { return styleIndent + "- " + text }
             if style.name.contains("list number") { return styleIndent + "1. " + text }

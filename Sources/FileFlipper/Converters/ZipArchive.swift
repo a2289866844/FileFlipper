@@ -1,104 +1,179 @@
-import Compression
 import Foundation
+import zlib
 
-/// Minimal read-only ZIP reader, enough for Office files (.pptx, .xlsx are ZIP packages).
-/// Supports stored and deflated entries.
+/// Bounded, read-only ZIP reader for Office packages. ZIP64, encryption and
+/// multi-disk archives are intentionally unsupported.
 struct ZipArchive {
+    struct Limits {
+        var archiveBytes = 256 * 1024 * 1024
+        var entryBytes = 64 * 1024 * 1024
+        var totalBytes = 256 * 1024 * 1024
+        var entries = 10_000
+    }
+
     private struct Entry {
         let method: UInt16
-        let compressedSize: Int
         let size: Int
-        let localHeaderOffset: Int
+        let checksum: UInt32
+        let payload: Range<Int>
     }
 
     private let data: Data
     private var entries: [String: Entry] = [:]
 
-    init(url: URL) throws {
-        data = try Data(contentsOf: url, options: .mappedIfSafe)
-        try readCentralDirectory()
+    init(url: URL, limits: Limits = Limits()) throws {
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        // Bound the read itself, including if a file grows after being opened.
+        var bytes = Data()
+        while true {
+            let remaining = max(0, limits.archiveBytes - bytes.count)
+            let chunk = try file.read(upToCount: min(64 * 1024, remaining + 1)) ?? Data()
+            if chunk.isEmpty { break }
+            guard chunk.count <= remaining else { throw Self.invalidArchive() }
+            bytes.append(chunk)
+        }
+        try self.init(data: bytes, limits: limits)
+    }
+
+    init(data: Data, limits: Limits = Limits()) throws {
+        // Normalize Data's indices (callers may pass a slice).
+        self.data = Data(data)
+        guard limits.archiveBytes > 0, limits.entryBytes >= 0,
+              limits.entryBytes < Int(UInt32.max), limits.totalBytes >= 0,
+              limits.entries > 0, data.count <= limits.archiveBytes else {
+            throw Self.invalidArchive()
+        }
+        try readCentralDirectory(limits: limits)
     }
 
     var paths: [String] { Array(entries.keys) }
-
     func contains(_ path: String) -> Bool { entries[path] != nil }
 
-    /// Contents of `path` (e.g. "ppt/slides/slide1.xml"), or `nil` if missing.
     func data(at path: String) -> Data? {
         guard let entry = entries[path] else { return nil }
-        let header = entry.localHeaderOffset
-        guard uint32(at: header) == 0x0403_4b50 else { return nil }
-        let start = header + 30 + Int(uint16(at: header + 26)) + Int(uint16(at: header + 28))
-        guard start + entry.compressedSize <= data.count else { return nil }
-        let compressed = data.subdata(in: start..<(start + entry.compressedSize))
-
-        switch entry.method {
-        case 0:
-            return compressed
-        case 8:
-            guard entry.size > 0 else { return Data() }
-            var output = Data(count: entry.size)
-            let written = output.withUnsafeMutableBytes { out in
-                compressed.withUnsafeBytes { input in
-                    compression_decode_buffer(out.bindMemory(to: UInt8.self).baseAddress!, entry.size,
-                                              input.bindMemory(to: UInt8.self).baseAddress!, compressed.count,
-                                              nil, COMPRESSION_ZLIB)
+        let compressed = data.subdata(in: entry.payload)
+        var output: Data
+        if entry.method == 0 {
+            output = compressed
+        } else {
+            // An extra byte detects streams that expand beyond the declared size.
+            output = Data(count: entry.size + 1)
+            var stream = z_stream()
+            guard inflateInit2_(&stream, -MAX_WBITS, ZLIB_VERSION,
+                                Int32(MemoryLayout<z_stream>.size)) == Z_OK else { return nil }
+            defer { inflateEnd(&stream) }
+            let status = output.withUnsafeMutableBytes { destination in
+                compressed.withUnsafeBytes { source -> Int32 in
+                    stream.next_in = UnsafeMutablePointer(mutating: source.bindMemory(to: Bytef.self).baseAddress)
+                    stream.avail_in = uInt(compressed.count)
+                    stream.next_out = destination.bindMemory(to: Bytef.self).baseAddress
+                    stream.avail_out = uInt(entry.size + 1)
+                    return inflate(&stream, Z_FINISH)
                 }
             }
-            return written == entry.size ? output : nil
-        default:
-            return nil
+            guard status == Z_STREAM_END, stream.total_out == entry.size,
+                  stream.total_in == compressed.count else { return nil }
+            output.count = entry.size
         }
+        let checksum = output.withUnsafeBytes {
+            UInt32(crc32(0, $0.bindMemory(to: Bytef.self).baseAddress, uInt(output.count)))
+        }
+        return checksum == entry.checksum ? output : nil
     }
 
-    // MARK: Parsing
-
-    private mutating func readCentralDirectory() throws {
-        // The end-of-central-directory record sits in the last 64 KB + 22 bytes.
-        let minimum = 22
-        guard data.count >= minimum else { throw ConversionError.message(L("Not a valid Office file")) }
-        var end = -1
-        var position = data.count - minimum
+    private mutating func readCentralDirectory(limits: Limits) throws {
+        guard data.count >= 22 else { throw Self.invalidArchive() }
         let lowest = max(0, data.count - 65_557)
-        while position >= lowest {
-            if uint32(at: position) == 0x0605_4b50 { end = position; break }
-            position -= 1
-        }
-        guard end >= 0 else { throw ConversionError.message(L("Not a valid Office file")) }
-
+        // Match the entire EOCD including its comment; a signature in a comment
+        // must not be mistaken for a truncated end record.
+        guard let end = stride(from: data.count - 22, through: lowest, by: -1).first(where: {
+            uint32(at: $0) == 0x0605_4b50 && $0 + 22 + Int(uint16(at: $0 + 20)) == data.count
+        }) else { throw Self.invalidArchive() }
         let count = Int(uint16(at: end + 10))
-        var offset = Int(uint32(at: end + 16))
+        let directorySize = Int(uint32(at: end + 12))
+        let directoryStart = Int(uint32(at: end + 16))
+        guard uint16(at: end + 4) == 0, uint16(at: end + 6) == 0,
+              uint16(at: end + 8) == count, count > 0, count < 0xffff,
+              count <= limits.entries, contains(directoryStart, directorySize, before: end),
+              directoryStart + directorySize == end else { throw Self.invalidArchive() }
+
+        var offset = directoryStart
+        var total = 0
+        var localRecords: [Range<Int>] = []
         for _ in 0..<count {
-            guard offset + 46 <= data.count, uint32(at: offset) == 0x0201_4b50 else { break }
+            guard contains(offset, 46, before: end), uint32(at: offset) == 0x0201_4b50 else {
+                throw Self.invalidArchive()
+            }
+            let flags = uint16(at: offset + 8)
             let method = uint16(at: offset + 10)
+            let checksum = uint32(at: offset + 16)
             let compressedSize = Int(uint32(at: offset + 20))
             let size = Int(uint32(at: offset + 24))
             let nameLength = Int(uint16(at: offset + 28))
             let extraLength = Int(uint16(at: offset + 30))
             let commentLength = Int(uint16(at: offset + 32))
-            let localHeader = Int(uint32(at: offset + 42))
-            let nameData = data.subdata(in: (offset + 46)..<(offset + 46 + nameLength))
-            if let name = String(data: nameData, encoding: .utf8) {
-                entries[name] = Entry(method: method, compressedSize: compressedSize, size: size,
-                                      localHeaderOffset: localHeader)
+            let header = Int(uint32(at: offset + 42))
+            let recordSize = 46 + nameLength + extraLength + commentLength
+            // Permit deflate options, data descriptors and UTF-8 names only.
+            guard flags & ~UInt16(0x080e) == 0, method == 0 || method == 8,
+                  uint16(at: offset + 34) == 0, nameLength > 0,
+                  contains(offset, recordSize, before: end), size <= limits.entryBytes,
+                  size <= limits.totalBytes - total,
+                  contains(header, 30, before: directoryStart),
+                  uint32(at: header) == 0x0403_4b50,
+                  uint16(at: header + 6) == flags, uint16(at: header + 8) == method else {
+                throw Self.invalidArchive()
             }
-            offset += 46 + nameLength + extraLength + commentLength
+            let nameData = data.subdata(in: (offset + 46)..<(offset + 46 + nameLength))
+            guard let name = String(data: nameData, encoding: .utf8), !name.contains("\0"),
+                  entries[name] == nil, Int(uint16(at: header + 26)) == nameLength else {
+                throw Self.invalidArchive()
+            }
+            let localSize = 30 + nameLength + Int(uint16(at: header + 28))
+            guard contains(header, localSize, before: directoryStart),
+                  data.subdata(in: (header + 30)..<(header + 30 + nameLength)) == nameData else {
+                throw Self.invalidArchive()
+            }
+            let start = header + localSize
+            guard contains(start, compressedSize, before: directoryStart),
+                  method != 0 || compressedSize == size,
+                  method != 8 || compressedSize > 0 else { throw Self.invalidArchive() }
+            if flags & 8 == 0 {
+                guard uint32(at: header + 14) == checksum,
+                      uint32(at: header + 18) == compressedSize,
+                      uint32(at: header + 22) == size else { throw Self.invalidArchive() }
+            }
+            let payload = start..<(start + compressedSize)
+            entries[name] = Entry(method: method, size: size, checksum: checksum, payload: payload)
+            localRecords.append(header..<payload.upperBound)
+            total += size
+            offset += recordSize
         }
-        guard !entries.isEmpty else { throw ConversionError.message(L("Not a valid Office file")) }
+        guard offset == end else { throw Self.invalidArchive() }
+        // Do not allow multiple entries to alias or overlap the same payload.
+        let sorted = localRecords.sorted { $0.lowerBound < $1.lowerBound }
+        for index in 1..<sorted.count where sorted[index].lowerBound < sorted[index - 1].upperBound {
+            throw Self.invalidArchive()
+        }
+    }
+
+    private func contains(_ offset: Int, _ length: Int, before end: Int) -> Bool {
+        offset >= 0 && length >= 0 && end <= data.count && offset <= end && length <= end - offset
     }
 
     private func uint16(at offset: Int) -> UInt16 {
-        guard offset + 2 <= data.count else { return 0 }
-        return UInt16(data[data.startIndex + offset]) | UInt16(data[data.startIndex + offset + 1]) << 8
+        guard contains(offset, 2, before: data.count) else { return 0 }
+        return UInt16(data[offset]) | UInt16(data[offset + 1]) << 8
     }
 
     private func uint32(at offset: Int) -> UInt32 {
-        guard offset + 4 <= data.count else { return 0 }
-        var value: UInt32 = 0
-        for index in 0..<4 {
-            value |= UInt32(data[data.startIndex + offset + index]) << (8 * index)
-        }
-        return value
+        guard contains(offset, 4, before: data.count) else { return 0 }
+        return (0..<4).reduce(UInt32(0)) { $0 | UInt32(data[offset + $1]) << (8 * $1) }
+    }
+
+    private static func invalidArchive() -> ConversionError {
+        .message(L("This Office file is damaged, unsupported, or exceeds safe size limits"))
     }
 }
 
@@ -146,7 +221,8 @@ extension XMLElement {
 enum OfficePackage {
     static func xml(_ archive: ZipArchive, _ path: String) -> XMLElement? {
         guard let data = archive.data(at: path),
-              let document = try? XMLDocument(data: data, options: []) else { return nil }
+              XMLSafety.accepts(data),
+              let document = try? XMLDocument(data: data, options: [.nodeLoadExternalEntitiesNever]) else { return nil }
         return document.rootElement()
     }
 
@@ -173,5 +249,45 @@ enum OfficePackage {
             if piece == ".." { _ = parts.popLast() } else if piece != "." { parts.append(String(piece)) }
         }
         return parts.joined(separator: "/")
+    }
+}
+
+/// Office parts do not need DTDs. Validate before constructing a recursive DOM,
+/// keeping external resources, entity expansion and excessive nesting out.
+private final class XMLSafety: NSObject, XMLParserDelegate {
+    private var depth = 0
+    private var nodes = 0
+
+    static func accepts(_ data: Data) -> Bool {
+        guard data.count <= 16 * 1024 * 1024 else { return false }
+        let prefix = Array(data.prefix(2))
+        let encoding: String.Encoding
+        if prefix == [0xff, 0xfe] || prefix == [0x3c, 0] {
+            encoding = .utf16LittleEndian
+        } else if prefix == [0xfe, 0xff] || prefix == [0, 0x3c] {
+            encoding = .utf16BigEndian
+        } else {
+            encoding = .utf8
+        }
+        guard let text = String(data: data, encoding: encoding), !text.contains("\0"),
+              !text.contains("<!DOCTYPE"), !text.contains("<!ENTITY") else { return false }
+        let validator = XMLSafety()
+        let parser = XMLParser(data: data)
+        parser.shouldResolveExternalEntities = false
+        parser.delegate = validator
+        return parser.parse()
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?,
+                attributes attributeDict: [String: String]) {
+        depth += 1
+        nodes += 1 + attributeDict.count
+        if depth > 128 || nodes > 250_000 { parser.abortParsing() }
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?) {
+        depth -= 1
     }
 }
