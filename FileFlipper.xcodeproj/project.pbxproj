@@ -32,6 +32,7 @@
 		C41902F0C53517D513FA3AC1 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E337A42E1ABA6C079CB0A0A /* AppDelegate.swift */; };
 		CAB6AD554D917F5EF9B6D106 /* WordMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CC4DFCD2F9241DD7C041F89 /* WordMarkdown.swift */; };
 		FC554A39A024A0A75823CBC3 /* FolderAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CF71A1F09E8BFE1430DBEF9 /* FolderAccess.swift */; };
+		BA590280633040AA99C90001 /* Workbench.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA590280633040AA99C90002 /* Workbench.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -62,6 +63,8 @@
 		E382BBA894EB377623537878 /* SpreadsheetConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpreadsheetConverter.swift; sourceTree = "<group>"; };
 		EE997BE338178DC72990D343 /* BackgroundRemover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRemover.swift; sourceTree = "<group>"; };
 		F1625EA7F302C9AF202656E2 /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
+		BA590280633040AA99C90002 /* Workbench.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workbench.swift; sourceTree = "<group>"; };
+		BA590280633040AA99C90003 /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/Localizable.strings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -95,6 +98,7 @@
 				49551220DC62E8CB9F602282 /* PickerController.swift */,
 				9C4EBAEC45B418DC6B9E3B4A /* Support.swift */,
 				3AF8649049A565D6152A6975 /* ToastController.swift */,
+				BA590280633040AA99C90002 /* Workbench.swift */,
 				863E7BD6BE394800CAB2EEB3 /* Converters */,
 			);
 			path = FileFlipper;
@@ -188,6 +192,7 @@
 				Base,
 				en,
 				"zh-Hans",
+				"zh-Hant",
 			);
 			mainGroup = D763CF81B0FC26D48740B8B4;
 			minimizedProjectReferenceProxies = 1;
@@ -238,6 +243,7 @@
 				AC18A9621E43238F1F42BAC5 /* Support.swift in Sources */,
 				4153E148153055F76CC8E10C /* TextRecognizer.swift in Sources */,
 				62525C8F3AD08626B03B5052 /* ToastController.swift in Sources */,
+				BA590280633040AA99C90001 /* Workbench.swift in Sources */,
 				CAB6AD554D917F5EF9B6D106 /* WordMarkdown.swift in Sources */,
 				B6EA86874AAAACE2AD3F87C4 /* ZipArchive.swift in Sources */,
 				321C4DDE89F0EDB4FA475233 /* main.swift in Sources */,
@@ -252,6 +258,7 @@
 			children = (
 				1380DC56B12AEE4675A0526D /* en */,
 				C0643E96B2DA088EC17728F3 /* zh-Hans */,
+				BA590280633040AA99C90003 /* zh-Hant */,
 			);
 			name = Localizable.strings;
 			sourceTree = "<group>";
@@ -293,7 +300,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -312,7 +319,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.5.1;
+				MARKETING_VERSION = 1.6.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -402,7 +409,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -415,7 +422,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.5.1;
+				MARKETING_VERSION = 1.6.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

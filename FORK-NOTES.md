@@ -1,10 +1,31 @@
-# Local fork 1.5.1
+# Local fork 1.6.0
 
 Based on upstream `v1.5.0` (`3ecf3fe0aa5e5c0d383db899bf77986952d4fe19`).
 This is an independent local build, not an upstream release or an Apple-notarized app.
 It uses the bundle identifier `com.a2289866844.fileflipper` so existing upstream folder grants are not reused.
 
-## Changes
+## Interface in 1.6.0
+
+- Open the app to a native workspace: choose or drop files, select a format or tool,
+  then run the action. Results include a **Show in Finder** button.
+- Use Shift while dragging in Finder for a compact format grid, or Option–Shift
+  for quick tools. Only dropping within a visible tile triggers an action.
+- Use automatic light/dark appearance, system type, blue selection states and
+  Traditional Chinese localization. The crop window and progress HUD share the theme.
+- Reject mixed file kinds as a batch instead of silently ignoring some files.
+  Prevent duplicate actions and changes to inputs while processing.
+- Request only a chosen output folder, with clear cancellation and error messages.
+  This update does not add entitlements or enable login startup.
+
+### Screenshots
+
+These are renders of the actual views using synthetic selections, not screenshots of personal files.
+
+![Workspace](docs/native-workbench-light.png)
+![Dark workspace](docs/native-workbench-dark.png)
+![Finder quick tools](docs/native-quick-tools.png)
+
+## Input hardening retained from 1.5.1
 
 - Validate ZIP end records, full central/local headers, names, payload boundaries,
   duplicate entries and overlapping local records before reading entry data.
@@ -43,10 +64,19 @@ The script verifies code-signature integrity and sandbox/debugger entitlements.
 Local signing is ad-hoc; it does not establish an Apple Developer ID or notarization.
 Do not change Gatekeeper settings or strip quarantine attributes to distribute this build.
 
-The 25 tests cover malformed and truncated ZIPs, decompression limits, corrupt
+The 31 tests cover malformed and truncated ZIPs, decompression limits, corrupt
 checksums, XML limits, unusual Office indices, DOCX/XLSX/PPTX-to-Markdown examples,
 and PNG-to-JPEG conversion. They verify that input files and existing outputs remain
-unchanged. Fixtures are small synthetic packages; no personal files are used.
+unchanged. Workspace tests cover selection, mixed batches, duplicate-run protection,
+unsupported files and precise quick-picker hit areas. An opt-in rendering test generates
+14 Traditional Chinese workspace states and two quick palettes, using AppKit hosting views.
+Fixtures and file names are synthetic; no personal files are used.
+
+```sh
+FILEFLIPPER_PREVIEW_DIR=/tmp/fileflipper-ui-previews swift test
+```
+
+Without the preview environment variable, the rendering test is skipped.
 
 ## Scope
 
@@ -56,5 +86,6 @@ System image, media and document importers still process input, and the app shou
 only receive access to folders needed for conversion. Very large Office documents
 may exceed the intentional limits above.
 
-To use the app, open FileFlipper, find its ◎ menu-bar icon, then drag a test file in
-Finder while holding Shift. Grant access only to the test folder when prompted.
+To use the app, open FileFlipper and choose files in the workspace, or use Shift while
+dragging in Finder. The menu-bar document icon can reopen the workspace. Grant access
+only to the folder needed for converted copies when prompted.

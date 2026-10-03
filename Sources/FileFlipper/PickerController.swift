@@ -1,64 +1,46 @@
 import AppKit
 
-/// Owns the transparent floating panel that hosts the bubble arc.
+/// Positions the quick palette beside the drag origin and keeps it within the screen.
 final class PickerController {
-    static let size: CGFloat = 420
-    /// How much room the arc needs above (or below) the pointer.
-    private static let arcReach: CGFloat = 200
-
     var onPick: ((PickerItem, [URL]) -> Void)?
-
     private var panel: NSPanel?
-    private var arcView: BubbleArcView?
+    private var palette: BubbleArcView?
     private var urls: [URL] = []
+    private var origin = NSPoint.zero
     private var hideToken = 0
 
     func show(at point: NSPoint, urls: [URL], tools: Bool) {
         hideToken += 1
         self.urls = urls
-
+        origin = point
         let panel = self.panel ?? makePanel()
-        let size = Self.size
-        var frame = NSRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
-        var upward = true
-        if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main {
-            let visible = screen.visibleFrame
-            // Near the top of the screen, open the arc downward instead.
-            upward = point.y + Self.arcReach <= visible.maxY
-            // Near the sides, slide the panel back on screen. Only the half with the arc matters,
-            // so the empty half may hang off the top or bottom edge.
-            let bounds = visible.insetBy(dx: -12, dy: -12)
-            frame.origin.x = min(max(frame.minX, bounds.minX), bounds.maxX - size)
-            if upward {
-                frame.origin.y = min(frame.minY, bounds.maxY - size)
-            } else {
-                frame.origin.y = max(frame.minY, bounds.minY)
-            }
-        }
-        panel.setFrame(frame, display: false)
-        arcView?.opensUpward = upward
         setToolsMode(tools)
-
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.12
             panel.animator().alphaValue = 1
         }
     }
 
     func setToolsMode(_ tools: Bool) {
-        arcView?.configure(items: Catalog.items(for: urls, tools: tools), urls: urls, tools: tools)
+        guard let panel, let palette else { return }
+        palette.configure(items: Catalog.items(for: urls, tools: tools), urls: urls, tools: tools)
+        let size = palette.preferredSize
+        let screen = NSScreen.screens.first { NSMouseInRect(origin, $0.frame, false) } ?? NSScreen.main
+        let visible = (screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)).insetBy(dx: 8, dy: 8)
+        let above = origin.y + 18 + size.height <= visible.maxY
+        let x = min(max(origin.x - size.width / 2, visible.minX), visible.maxX - size.width)
+        let y = min(max(above ? origin.y + 18 : origin.y - size.height - 18, visible.minY), visible.maxY - size.height)
+        panel.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true)
     }
 
-    /// Hides after a short delay so a drop that lands at the same moment
-    /// the mouse is released still gets delivered to the picker.
     func hide(afterDelay delay: TimeInterval = 0) {
         let token = hideToken
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, token == self.hideToken, let panel = self.panel else { return }
             NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.12
+                context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.12
                 panel.animator().alphaValue = 0
             }, completionHandler: {
                 guard token == self.hideToken else { return }
@@ -68,22 +50,17 @@ final class PickerController {
     }
 
     private func makePanel() -> NSPanel {
-        let size = Self.size
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: size, height: size),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 256),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = false
+        panel.hasShadow = true
         panel.level = .popUpMenu
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-
-        let view = BubbleArcView(frame: NSRect(x: 0, y: 0, width: size, height: size))
+        let view = BubbleArcView(frame: panel.contentView!.bounds)
+        view.autoresizingMask = [.width, .height]
         view.onDrop = { [weak self] item, urls in
             guard let self else { return }
             self.hideToken += 1
@@ -91,9 +68,8 @@ final class PickerController {
             self.onPick?(item, urls)
         }
         panel.contentView = view
-
         self.panel = panel
-        self.arcView = view
+        self.palette = view
         return panel
     }
 }

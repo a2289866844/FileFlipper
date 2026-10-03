@@ -3,7 +3,7 @@ import AppKit
 /// The Mac App Store requires the App Sandbox. A sandboxed app may read files that are
 /// dropped on it, but may not create new files next to them unless the user has granted
 /// access to that folder. FileFlipper asks once per folder (the user can pick their whole
-/// Home folder to never be asked again) and remembers the answer as a security-scoped bookmark.
+/// parent folder if they need it) and remembers the answer as a security-scoped bookmark.
 ///
 /// Outside the sandbox (e.g. `swift run`) every call is a no-op.
 final class FolderAccess {
@@ -47,8 +47,8 @@ final class FolderAccess {
         return stopAll
     }
 
-    /// Asks for access to the Home folder, which covers almost everything a user drags.
-    func requestHomeAccess() {
+    /// Lets the user choose a folder; access is never granted automatically.
+    func chooseFolderAccess() {
         _ = requestAccess(to: Self.realHome)
     }
 
@@ -76,7 +76,7 @@ final class FolderAccess {
         panel.canCreateDirectories = false
         panel.directoryURL = directory
         panel.prompt = L("Grant Access")
-        panel.message = L("FileFlipper needs your permission to save converted files in “%@”. Tip: choose your Home folder to allow every folder inside it at once.", directory.lastPathComponent)
+        panel.message = L("Allow saving new files in “%@”. Choose only the folder you need; your original files stay unchanged.", directory.lastPathComponent)
         guard panel.runModal() == .OK, let chosen = panel.url else { return nil }
 
         do {

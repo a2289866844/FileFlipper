@@ -17,7 +17,7 @@ final class ToastController {
         label.sizeToFit()
 
         let width = min(max(label.frame.width + 64, 180), 520)
-        let height: CGFloat = 44
+        let height: CGFloat = 48
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         panel.setFrame(NSRect(x: visible.midX - width / 2, y: visible.minY + 80, width: width, height: height),
@@ -29,7 +29,7 @@ final class ToastController {
             panel.orderFrontRegardless()
         }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.15
             panel.animator().alphaValue = 1
         }
 
@@ -38,7 +38,7 @@ final class ToastController {
         DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
             guard let self, self.token == current else { return }
             NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.25
+                context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.25
                 panel.animator().alphaValue = 0
             }, completionHandler: {
                 if self.token == current { panel.orderOut(nil) }
@@ -72,7 +72,7 @@ final class ToastController {
         background.layer?.cornerRadius = 12
         background.layer?.masksToBounds = true
 
-        iconView.contentTintColor = NSColor(calibratedRed: 0.98, green: 0.45, blue: 0.15, alpha: 1)
+        iconView.contentTintColor = Palette.accent
         label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         label.textColor = .labelColor
         label.lineBreakMode = .byTruncatingMiddle

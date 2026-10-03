@@ -47,7 +47,7 @@ enum CropWindow {
         }
 
         let sizeLabel = NSTextField(labelWithString: "")
-        sizeLabel.textColor = Palette.brown.withAlphaComponent(0.6)
+        sizeLabel.textColor = Palette.secondary
         sizeLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         sizeLabel.frame = NSRect(x: x + 10, y: margin + (rowHeight - 16) / 2, width: 130, height: 16)
         content.addSubview(sizeLabel)
@@ -72,8 +72,7 @@ enum CropWindow {
                               backing: .buffered, defer: false)
         window.title = L("Crop “%@”", fileName)
         window.titlebarAppearsTransparent = true
-        window.backgroundColor = Palette.cream
-        window.appearance = NSAppearance(named: .aqua)
+        window.backgroundColor = Palette.surface
         window.contentView = content
         window.isReleasedWhenClosed = false
         window.level = .floating
@@ -170,20 +169,20 @@ private final class PillButton: NSButton {
         let pressed = isHighlighted
         switch style {
         case .primary:
-            return (Palette.orange.withAlphaComponent(pressed ? 0.75 : (isHovering ? 0.9 : 1)), .white)
+            return (Palette.accent.withAlphaComponent(pressed ? 0.75 : (isHovering ? 0.9 : 1)), .white)
         case .secondary:
-            return (Palette.peach.withAlphaComponent(pressed ? 0.95 : (isHovering ? 0.8 : 0.6)), Palette.brown)
+            return (Palette.control.withAlphaComponent(pressed ? 0.95 : (isHovering ? 0.8 : 0.6)), Palette.text)
         case .choice where isOn:
-            return (Palette.orange.withAlphaComponent(0.88), .white)
+            return (Palette.accent.withAlphaComponent(0.88), .white)
         case .choice:
-            return (Palette.peach.withAlphaComponent(pressed ? 0.85 : (isHovering ? 0.7 : 0.45)),
-                    Palette.brown.withAlphaComponent(0.85))
+            return (Palette.control.withAlphaComponent(pressed ? 0.85 : (isHovering ? 0.7 : 0.45)),
+                    Palette.text.withAlphaComponent(0.85))
         }
     }
 
     override func draw(_ dirtyRect: NSRect) {
         let (fill, text) = colors
-        let radius = bounds.height / 2
+        let radius: CGFloat = 7
         fill.setFill()
         NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
 

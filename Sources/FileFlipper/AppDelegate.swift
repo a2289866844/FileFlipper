@@ -5,25 +5,23 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private enum Keys {
         static let enabled = "enabled"
-        static let shownWelcome = "shownWelcome"
     }
 
     private var statusItem: NSStatusItem!
     private let monitor = DragMonitor()
     private let picker = PickerController()
     private let toast = ToastController()
-    private let log = Logger(subsystem: "com.aimeesun.fileflipper", category: "actions")
+    private let workbench = WorkbenchModel()
+    private var hasProgressToast = false
+    private lazy var mainWindow = WorkbenchWindowController(model: workbench)
+    private let log = Logger(subsystem: "com.a2289866844.fileflipper", category: "actions")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Two running copies (e.g. one in Applications and one in a build folder) would each show a picker.
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
             .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
-        if !others.isEmpty {
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
-            alert.messageText = L("FileFlipper is already running")
-            alert.informativeText = L("Look for the ◎ icon in the menu bar at the top-right of your screen.")
-            alert.runModal()
+        if let existing = others.first {
+            existing.activate(options: [.activateAllWindows])
             NSApp.terminate(nil)
             return
         }
@@ -47,24 +45,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         monitor.start()
 
-        if !UserDefaults.standard.bool(forKey: Keys.shownWelcome) {
-            UserDefaults.standard.set(true, forKey: Keys.shownWelcome)
-            showHelp()
+        workbench.onRun = { [weak self] item, urls in self?.run(item, on: urls) }
+        // Login launches remain quiet. Opening the app normally presents its workspace.
+        if NSAppleEventManager.shared().currentAppleEvent?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue != keyAELaunchedAsLogInItem {
+            showWorkbench()
         }
     }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showWorkbench()
+        return true
+    }
+
+    @objc private func showWorkbench() { mainWindow.present() }
 
     // MARK: Running actions
 
     private func run(_ item: PickerItem, on urls: [URL]) {
+        guard !workbench.isWorking else {
+            showWorkbench()
+            return
+        }
+        guard !urls.isEmpty, !Catalog.items(for: urls, tools: false).isEmpty || !Catalog.items(for: urls, tools: true).isEmpty else {
+            workbench.setFiles(urls)
+            showWorkbench()
+            return
+        }
+        workbench.tools = Catalog.items(for: urls, tools: true).contains { $0.title == item.title }
+        workbench.begin(item, files: urls)
         // Sandbox: we need permission to write into the folders holding these files.
         guard let endAccess = FolderAccess.shared.beginAccess(to: urls.map { $0.deletingLastPathComponent() }) else {
             log.error("No folder access for \(urls.first?.deletingLastPathComponent().path ?? "?", privacy: .public)")
-            toast.show(L("FileFlipper needs folder access to save the converted file"), symbol: "lock.fill", duration: 4)
+            workbench.complete(outputs: [], message: L("Folder access was not granted. Choose a folder when you try again."), failed: true)
+            showWorkbench()
             return
         }
 
         let what = urls.count == 1 ? urls[0].lastPathComponent : L("%@ files", String(urls.count))
-        toast.show(L("%@: %@…", item.title, what), symbol: "hourglass", duration: nil)
+        hasProgressToast = !(mainWindow.window?.isVisible ?? false)
+        if hasProgressToast {
+            toast.show(L("%@: %@…", item.title, what), symbol: "hourglass", duration: nil)
+        }
 
         let work = { () -> Result<[URL], Error> in
             Result { try item.action(urls) }
@@ -87,22 +108,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func finish(_ result: Result<[URL], Error>, item: PickerItem) {
+        let message: String
+        let outputs: [URL]
+        let failed: Bool
         switch result {
-        case .success(let outputs) where outputs.count == 1:
-            toast.show(L("Saved %@", outputs[0].lastPathComponent), symbol: "checkmark.circle.fill")
-            NSSound(named: "Pop")?.play()
-        case .success(let outputs) where outputs.count > 1:
-            toast.show(L("Saved %@ files", String(outputs.count)), symbol: "checkmark.circle.fill")
-            NSSound(named: "Pop")?.play()
-        case .success:
-            toast.show(L("%@: nothing to do", item.title), symbol: "exclamationmark.circle")
+        case .success(let files):
+            outputs = files
+            failed = false
+            message = files.count == 1 ? L("Saved %@", files[0].lastPathComponent)
+                : (files.isEmpty ? L("%@: nothing to do", item.title) : L("Saved %@ files", String(files.count)))
         case .failure(ConversionError.cancelled):
-            toast.show(L("Cancelled"), symbol: "xmark.circle", duration: 1.2)
+            outputs = []; failed = false; message = L("Cancelled")
         case .failure(let error):
-            log.error("\(item.title, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-            toast.show(error.localizedDescription, symbol: "xmark.octagon.fill", duration: 4)
-            NSSound.beep()
+            outputs = []; failed = true; message = error.localizedDescription
+            log.error("\(item.title, privacy: .public) failed: \(message, privacy: .public)")
         }
+        workbench.complete(outputs: outputs, message: message, failed: failed)
+        // A completed toast also dismisses any persistent progress toast from a Finder action.
+        if hasProgressToast || !(mainWindow.window?.isVisible ?? false) {
+            toast.show(message, symbol: failed ? "exclamationmark.circle.fill" : (outputs.isEmpty ? "info.circle" : "checkmark.circle.fill"),
+                       duration: failed ? 5 : 2.5)
+        }
+        hasProgressToast = false
     }
 
     // MARK: Menu bar
@@ -110,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "circle.circle", accessibilityDescription: "FileFlipper")
+            button.image = NSImage(systemSymbolName: "doc.badge.arrow.up", accessibilityDescription: "FileFlipper")
             button.image?.isTemplate = true
         }
         let menu = NSMenu()
@@ -120,8 +147,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        let open = NSMenuItem(title: L("Open FileFlipper…"), action: #selector(showWorkbench), keyEquivalent: "o")
+        open.target = self
+        menu.addItem(open)
+        menu.addItem(.separator())
 
-        let enabled = NSMenuItem(title: L("Enabled"), action: #selector(toggleEnabled), keyEquivalent: "")
+        let enabled = NSMenuItem(title: L("Finder shortcuts"), action: #selector(toggleEnabled), keyEquivalent: "")
         enabled.target = self
         enabled.state = monitor.isEnabled ? .on : .off
         menu.addItem(enabled)
@@ -143,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 entry.isEnabled = false
                 menu.addItem(entry)
             }
-            let grant = NSMenuItem(title: L("Allow Home Folder…"), action: #selector(grantHome), keyEquivalent: "")
+            let grant = NSMenuItem(title: L("Choose allowed folder…"), action: #selector(grantFolder), keyEquivalent: "")
             grant.target = self
             menu.addItem(grant)
             if !folders.isEmpty {
@@ -154,10 +185,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
-
-        let help = NSMenuItem(title: L("How to Use…"), action: #selector(showHelp), keyEquivalent: "")
-        help.target = self
-        menu.addItem(help)
 
         let about = NSMenuItem(title: L("About FileFlipper"), action: #selector(showAbout), keyEquivalent: "")
         about.target = self
@@ -185,8 +212,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func grantHome() {
-        FolderAccess.shared.requestHomeAccess()
+    @objc private func grantFolder() {
+        FolderAccess.shared.chooseFolderAccess()
     }
 
     @objc private func resetFolders() {
@@ -200,27 +227,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ])
     }
 
-    @objc private func showHelp() {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = L("How to use FileFlipper")
-        var paragraphs = [
-            L("Convert: start dragging a file in Finder, then hold Shift. Round buttons appear in an arc above the pointer. Drop the file on a format and the converted copy is saved next to the original."),
-            L("Tools: hold Option + Shift while dragging to see tools for that file type (crop, compress, cut out, rotate, merge, split…)."),
-            L("Markdown: pick MD to turn Word, PDF, PowerPoint or Excel into Markdown, ready for AI."),
-            L("Changed your mind? Let go below the arc and nothing happens."),
-            L("Everything happens locally on your Mac. FileFlipper lives in the menu bar."),
-        ]
-        if FolderAccess.isSandboxed {
-            paragraphs.append(L("The first time you convert a file in a folder, macOS asks you to allow FileFlipper to save there. Choose “Allow Home Folder” to grant access once for all your folders."))
-        }
-        alert.informativeText = paragraphs.joined(separator: "\n\n")
-        alert.addButton(withTitle: L("Got It"))
-        if FolderAccess.isSandboxed && FolderAccess.shared.grantedFolders.isEmpty {
-            alert.addButton(withTitle: L("Allow Home Folder…"))
-        }
-        if alert.runModal() == .alertSecondButtonReturn {
-            FolderAccess.shared.requestHomeAccess()
-        }
-    }
 }

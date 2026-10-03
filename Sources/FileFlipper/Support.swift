@@ -1,13 +1,16 @@
 import Foundation
 
+/// Shared bundle can be substituted by rendering and localization tests.
+enum Localization { static var bundle = Bundle.main }
+
 /// Localized text: the English text is the key; translations live in Localizable.strings.
 func L(_ key: String) -> String {
-    NSLocalizedString(key, comment: "")
+    Localization.bundle.localizedString(forKey: key, value: nil, table: nil)
 }
 
 /// Localized text with `%@` placeholders.
 func L(_ key: String, _ arguments: CVarArg...) -> String {
-    String(format: NSLocalizedString(key, comment: ""), arguments: arguments)
+    String(format: Localization.bundle.localizedString(forKey: key, value: nil, table: nil), arguments: arguments)
 }
 
 enum ConversionError: LocalizedError {

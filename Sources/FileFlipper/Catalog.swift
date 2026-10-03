@@ -1,7 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// One bubble on the picker arc.
+/// One action shared by the main window and quick picker.
 struct PickerItem {
     let title: String
     /// SF Symbol inside the bubble. Formats get one from `Catalog.formatSymbol(for:)`.
@@ -48,6 +48,7 @@ enum Catalog {
     static func items(for urls: [URL], tools: Bool) -> [PickerItem] {
         guard let first = urls.first else { return [] }
         let kind = FileKind(url: first)
+        guard urls.allSatisfy({ FileKind(url: $0) == kind }) else { return [] }
         let sourceExt = first.pathExtension.lowercased()
 
         if tools {
